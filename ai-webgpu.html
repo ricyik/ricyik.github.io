@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Transformer.js WebGPU Demo</title>
+    <script type="module">
+        // Import Transformers.js from CDN
+        import { pipeline, env } from 'https://cdn.jsdelivr.net/npm/@xenova/transformers@2.17.1';
+        
+        // Make it available globally
+        window.transformers = { pipeline, env };
+        
+        // Dispatch a custom event when loaded
+        window.dispatchEvent(new CustomEvent('transformers-loaded'));
+    </script>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            color: white;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .status {
+            background: rgba(255,255,255,0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 10px;
+            padding: 15px;
+            margin-bottom: 20px;
+            border: 1px solid rgba(255,255,255,0.2);
+        }
+
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+            color: white;
+        }
+
+        .status-item:last-child {
+            margin-bottom: 0;
+        }
+
+        .status-indicator {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: #ff6b6b;
+            display: inline-block;
+            margin-right: 10px;
+        }
+
+        .status-indicator.active {
+            background: #51cf66;
+            box-shadow: 0 0 10px #51cf66;
+        }
+
+        .demo-section {
+            background: white;
+            border-radius: 15px;
+            padding: 25px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+        }
+
+        .demo-section h2 {
+            color: #4a5568;
+            margin-bottom: 20px;
+            font-size: 1.5em;
+        }
+
+        .input-group {
+            margin-bottom: 20px;
+        }
+
+        .input-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 600;
+            color: #4a5568;
+        }
+
+        .input-group input,
+        .input-group textarea {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e2e8f0;
+            border-radius: 8px;
+            font-size: 16px;
+            transition: border-color 0.3s ease;
+        }
+
+        .input-group input:focus,
+        .input-group textarea:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .input-group textarea {
+            resize: vertical;
+            min-height: 100px;
+        }
+
+        .btn {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 25px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-right: 10px;
+            margin-bottom: 10px;
+        }
+
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .output {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 8px;
+            padding: 15px;
+            margin-top: 15px;
+            font-family: 'Courier New', monospace;
+            white-space: pre-wrap;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .loading {
+            display: none;
+            align-items: center;
+            justify-content: center;
+            color: #667eea;
+            font-weight: 600;
+        }
+
+        .loading.active {
+            display: flex;
+        }
+
+        .spinner {
+            width: 20px;
+            height: 20px;
+            border: 3px solid #f3f3f3;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin-right: 10px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .performance-stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-top: 20px;
+        }
+
+        .stat-card {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 2em;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .stat-label {
+            font-size: 0.9em;
+            opacity: 0.9;
+        }
+
+        .error {
+            background: #fed7d7;
+            color: #c53030;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 10px;
+        }
+
+        .success {
+            background: #c6f6d5;
+            color: #2f855a;
+            padding: 10px;
+            border-radius: 5px;
+            margin-top: 10px;
+        }
+
+        @media (max-width: 768px) {
+            .container {
+                padding: 10px;
+            }
+            
+            .header h1 {
+                font-size: 2em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🤖 Transformer.js WebGPU Demo</h1>
+            <p>Advanced AI Models Running in Your Browser</p>
+        </div>
+
+        <div class="status">
+            <div class="status-item">
+                <span><span class="status-indicator" id="webgpu-status"></span>WebGPU Support</span>
+                <span id="webgpu-text">Checking...</span>
+            </div>
+            <div class="status-item">
+                <span><span class="status-indicator" id="transformers-status"></span>Transformers.js</span>
+                <span id="transformers-text">Loading...</span>
+            </div>
+            <div class="status-item">
+                <span><span class="status-indicator" id="model-status"></span>Model Status</span>
+                <span id="model-text">Ready to load</span>
+            </div>
+        </div>
+
+        <div class="demo-section">
+            <h2>🎯 Sentiment Analysis</h2>
+            <div class="input-group">
+                <label for="sentiment-input">Enter text to analyze sentiment:</label>
+                <textarea id="sentiment-input" placeholder="Type your text here...">I love using AI models in the browser!</textarea>
+            </div>
+            <button class="btn" onclick="runSentimentAnalysis()">Analyze Sentiment</button>
+            <div class="loading" id="sentiment-loading">
+                <div class="spinner"></div>
+                <span>Analyzing sentiment...</span>
+            </div>
+            <div class="output" id="sentiment-output"></div>
+        </div>
+
+        <div class="demo-section">
+            <h2>📝 Text Generation</h2>
+            <div class="input-group">
+                <label for="generation-input">Enter prompt for text generation:</label>
+                <textarea id="generation-input" placeholder="Enter your prompt...">The future of AI is</textarea>
+            </div>
+            <div class="input-group">
+                <label for="max-tokens">Max tokens:</label>
+                <input type="number" id="max-tokens" value="50" min="10" max="200">
+            </div>
+            <button class="btn" onclick="runTextGeneration()">Generate Text</button>
+            <div class="loading" id="generation-loading">
+                <div class="spinner"></div>
+                <span>Generating text...</span>
+            </div>
+            <div class="output" id="generation-output"></div>
+        </div>
+
+        <div class="demo-section">
+            <h2>🔍 Question Answering</h2>
+            <div class="input-group">
+                <label for="context-input">Context:</label>
+                <textarea id="context-input" placeholder="Provide context...">WebGPU is a modern graphics API that provides efficient access to GPU computation and rendering capabilities in web browsers. It enables high-performance applications and advanced AI model inference directly in the browser.</textarea>
+            </div>
+            <div class="input-group">
+                <label for="question-input">Question:</label>
+                <input type="text" id="question-input" placeholder="Ask a question about the context..." value="What is WebGPU?">
+            </div>
+            <button class="btn" onclick="runQuestionAnswering()">Answer Question</button>
+            <div class="loading" id="qa-loading">
+                <div class="spinner"></div>
+                <span>Finding answer...</span>
+            </div>
+            <div class="output" id="qa-output"></div>
+        </div>
+
+        <div class="demo-section">
+            <h2>📊 Performance Metrics</h2>
+            <div class="performance-stats">
+                <div class="stat-card">
+                    <div class="stat-value" id="inference-time">0ms</div>
+                    <div class="stat-label">Last Inference Time</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="total-inferences">0</div>
+                    <div class="stat-label">Total Inferences</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="memory-usage">0MB</div>
+                    <div class="stat-label">Memory Usage</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="backend-type">CPU</div>
+                    <div class="stat-label">Backend</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Global variables
+        let sentimentPipeline = null;
+        let generationPipeline = null;
+        let qaPipeline = null;
+        let performanceData = {
+            totalInferences: 0,
+            lastInferenceTime: 0,
+            memoryUsage: 0,
+            backendType: 'CPU'
+        };
+
+        // Initialize the application
+        async function initializeApp() {
+            try {
+                // Check WebGPU support
+                const webgpuSupported = await checkWebGPUSupport();
+                updateStatus('webgpu-status', 'webgpu-text', webgpuSupported, 
+                    webgpuSupported ? 'Available' : 'Not Available');
+
+                // Wait for Transformers.js to load
+                await waitForTransformers();
+                
+                // Check Transformers.js availability
+                const transformersAvailable = typeof window.transformers !== 'undefined';
+                updateStatus('transformers-status', 'transformers-text', transformersAvailable, 
+                    transformersAvailable ? 'Loaded' : 'Failed to load');
+
+                if (transformersAvailable) {
+                    // Configure Transformers.js
+                    if (webgpuSupported) {
+                        // Try to use WebGPU backend
+                        window.transformers.env.backends.onnx.wasm.numThreads = 1;
+                        performanceData.backendType = 'WebGPU';
+                    } else {
+                        // Fallback to WASM
+                        window.transformers.env.backends.onnx.wasm.numThreads = navigator.hardwareConcurrency || 4;
+                        performanceData.backendType = 'WASM';
+                    }
+
+                    updateStatus('model-status', 'model-text', true, 'Ready');
+                    updatePerformanceDisplay();
+                }
+
+            } catch (error) {
+                console.error('Initialization error:', error);
+                updateStatus('transformers-status', 'transformers-text', false, 'Error: ' + error.message);
+            }
+        }
+
+        // Wait for Transformers.js to load
+        function waitForTransformers() {
+            return new Promise((resolve) => {
+                if (typeof window.transformers !== 'undefined') {
+                    resolve();
+                } else {
+                    window.addEventListener('transformers-loaded', resolve, { once: true });
+                    // Fallback timeout
+                    setTimeout(() => {
+                        console.warn('Transformers.js loading timeout');
+                        resolve();
+                    }, 10000);
+                }
+            });
+        }
+
+        // Check WebGPU support
+        async function checkWebGPUSupport() {
+            if (!navigator.gpu) {
+                return false;
+            }
+
+            try {
+                const adapter = await navigator.gpu.requestAdapter();
+                if (!adapter) {
+                    return false;
+                }
+
+                const device = await adapter.requestDevice();
+                return !!device;
+            } catch (error) {
+                console.warn('WebGPU check failed:', error);
+                return false;
+            }
+        }
+
+        // Update status indicators
+        function updateStatus(indicatorId, textId, isActive, text) {
+            const indicator = document.getElementById(indicatorId);
+            const textElement = document.getElementById(textId);
+            
+            if (isActive) {
+                indicator.classList.add('active');
+            } else {
+                indicator.classList.remove('active');
+            }
+            
+            textElement.textContent = text;
+        }
+
+        // Update performance metrics display
+        function updatePerformanceDisplay() {
+            document.getElementById('inference-time').textContent = performanceData.lastInferenceTime + 'ms';
+            document.getElementById('total-inferences').textContent = performanceData.totalInferences;
+            document.getElementById('memory-usage').textContent = Math.round(performanceData.memoryUsage) + 'MB';
+            document.getElementById('backend-type').textContent = performanceData.backendType;
+        }
+
+        // Show/hide loading indicators
+        function setLoading(loadingId, isLoading) {
+            const loadingElement = document.getElementById(loadingId);
+            if (isLoading) {
+                loadingElement.classList.add('active');
+            } else {
+                loadingElement.classList.remove('active');
+            }
+        }
+
+        // Display results
+        function displayResult(outputId, result, isError = false) {
+            const outputElement = document.getElementById(outputId);
+            outputElement.innerHTML = '';
+            
+            if (isError) {
+                outputElement.innerHTML = `<div class="error">${result}</div>`;
+            } else {
+                outputElement.innerHTML = `<div class="success">${JSON.stringify(result, null, 2)}</div>`;
+            }
+        }
+
+        // Sentiment Analysis
+        async function runSentimentAnalysis() {
+            const input = document.getElementById('sentiment-input').value.trim();
+            if (!input) {
+                displayResult('sentiment-output', 'Please enter some text to analyze.', true);
+                return;
+            }
+
+            try {
+                setLoading('sentiment-loading', true);
+                const startTime = performance.now();
+
+                // Initialize pipeline if not already done
+                if (!sentimentPipeline) {
+                    sentimentPipeline = await window.transformers.pipeline('sentiment-analysis', 'Xenova/distilbert-base-uncased-finetuned-sst-2-english');
+                }
+
+                // Run inference
+                const result = await sentimentPipeline(input);
+                
+                const endTime = performance.now();
+                const inferenceTime = Math.round(endTime - startTime);
+
+                // Update performance metrics
+                performanceData.totalInferences++;
+                performanceData.lastInferenceTime = inferenceTime;
+                performanceData.memoryUsage = (performance.memory?.usedJSHeapSize / 1024 / 1024) || 0;
+                updatePerformanceDisplay();
+
+                // Display result
+                displayResult('sentiment-output', {
+                    text: input,
+                    sentiment: result[0].label,
+                    confidence: Math.round(result[0].score * 100) + '%',
+                    inference_time: inferenceTime + 'ms'
+                });
+
+            } catch (error) {
+                console.error('Sentiment analysis error:', error);
+                displayResult('sentiment-output', 'Error: ' + error.message, true);
+            } finally {
+                setLoading('sentiment-loading', false);
+            }
+        }
+
+        // Text Generation
+        async function runTextGeneration() {
+            const input = document.getElementById('generation-input').value.trim();
+            const maxTokens = parseInt(document.getElementById('max-tokens').value);
+            
+            if (!input) {
+                displayResult('generation-output', 'Please enter a prompt for text generation.', true);
+                return;
+            }
+
+            try {
+                setLoading('generation-loading', true);
+                const startTime = performance.now();
+
+                // Initialize pipeline if not already done
+                if (!generationPipeline) {
+                    generationPipeline = await window.transformers.pipeline('text-generation', 'Xenova/gpt2');
+                }
+
+                // Run inference
+                const result = await generationPipeline(input, { 
+                    max_length: maxTokens,
+                    temperature: 0.7,
+                    do_sample: true,
+                    pad_token_id: 50256
+                });
+                
+                const endTime = performance.now();
+                const inferenceTime = Math.round(endTime - startTime);
+
+                // Update performance metrics
+                performanceData.totalInferences++;
+                performanceData.lastInferenceTime = inferenceTime;
+                performanceData.memoryUsage = (performance.memory?.usedJSHeapSize / 1024 / 1024) || 0;
+                updatePerformanceDisplay();
+
+                // Display result
+                displayResult('generation-output', {
+                    prompt: input,
+                    generated_text: result[0].generated_text,
+                    inference_time: inferenceTime + 'ms'
+                });
+
+            } catch (error) {
+                console.error('Text generation error:', error);
+                displayResult('generation-output', 'Error: ' + error.message, true);
+            } finally {
+                setLoading('generation-loading', false);
+            }
+        }
+
+        // Question Answering
+        async function runQuestionAnswering() {
+            const context = document.getElementById('context-input').value.trim();
+            const question = document.getElementById('question-input').value.trim();
+            
+            if (!context || !question) {
+                displayResult('qa-output', 'Please provide both context and question.', true);
+                return;
+            }
+
+            try {
+                setLoading('qa-loading', true);
+                const startTime = performance.now();
+
+                // Initialize pipeline if not already done
+                if (!qaPipeline) {
+                    qaPipeline = await window.transformers.pipeline('question-answering', 'Xenova/distilbert-base-uncased-distilled-squad');
+                }
+
+                // Run inference
+                const result = await qaPipeline(question, context);
+                
+                const endTime = performance.now();
+                const inferenceTime = Math.round(endTime - startTime);
+
+                // Update performance metrics
+                performanceData.totalInferences++;
+                performanceData.lastInferenceTime = inferenceTime;
+                performanceData.memoryUsage = (performance.memory?.usedJSHeapSize / 1024 / 1024) || 0;
+                updatePerformanceDisplay();
+
+                // Display result
+                displayResult('qa-output', {
+                    question: question,
+                    answer: result.answer,
+                    confidence: Math.round(result.score * 100) + '%',
+                    inference_time: inferenceTime + 'ms'
+                });
+
+            } catch (error) {
+                console.error('Question answering error:', error);
+                displayResult('qa-output', 'Error: ' + error.message, true);
+            } finally {
+                setLoading('qa-loading', false);
+            }
+        }
+
+        // Initialize the application when the page loads
+        window.addEventListener('load', initializeApp);
+    </script>
+</body>
+</html>
